@@ -1,0 +1,69 @@
+Aktivera packages i Home Assistant
+
+Lägg till i configuration.yaml:
+
+homeassistant:
+  packages: !include_dir_named packages
+
+
+Kopiera package-filen
+
+Lägg peakshaving_core.yaml i:
+
+config/packages/peakshaving_core.yaml
+
+
+Lägg in automationen
+
+Antingen:
+
+kopiera YAML för automationen till config/automations.yaml, eller
+
+lägg den som blueprint om du vill kunna välja entiteter via UI.
+
+Starta om Home Assistant
+
+Ställ in parametrar
+
+Gå till Inställningar → Enheter & tjänster → Hjälpare och justera bl.a:
+
+max_hourly_import – önskat max timmedel (W)
+
+battery_w_per_amp – W per A för ditt batteri
+
+battery_soc_min_peakshave / number.solinteg_inverter_battery_soc_min_on_grid
+
+battery_charge_current_cheap / supercheap
+
+battery_discharge_current_expensive / ultraexpensive
+
+battery_price_spread_threshold
+
+Dashboard / visualisering
+
+Rekommenderade entiteter att lägga på en vy:
+
+sensor.medeleffekt_innevarande_timme
+
+sensor.allowed_import_power_this_moment
+
+sensor.import_error_w
+
+sensor.safe_extra_import_power
+
+sensor.nordpool_prislage
+
+sensor.nordpool_arbitrage_spread_24h_v3
+
+binary_sensor.battery_price_arbitrage_ok
+
+sensor.batteri_styrlage
+
+batteriets SoC och charge/discharge current limits
+
+Det ger en bra bild av hur logiken arbetar i realtid.
+
+Ansvarsfriskrivning
+
+All styrning av batterier, nätimport och export sker på egen risk.
+Verifiera alltid gränsvärden mot huvudsäkringar, nätägarens regler och växelriktarens specifikationer innan du kör skarpt.
