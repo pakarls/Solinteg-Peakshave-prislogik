@@ -1,3 +1,8 @@
+Ansvarsfriskrivning
+
+All styrning av batterier, nätimport och export sker på egen risk.
+Verifiera alltid gränsvärden mot huvudsäkringar, nätägarens regler och växelriktarens specifikationer innan du kör skarpt.
+
 Aktivera packages i Home Assistant
 
 Lägg till i configuration.yaml:
