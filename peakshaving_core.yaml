@@ -1,0 +1,527 @@
+###############################################################################
+# PEAKSHAVING + PRISLOGIK – CORE PACKAGE
+###############################################################################
+
+############################
+# INPUT_NUMBER (hjälpare)
+############################
+input_number:
+  max_hourly_import:
+    name: "Max import-snitt per timme"
+    min: 0
+    max: 20000
+    step: 100
+    unit_of_measurement: "W"
+    mode: box
+
+  battery_w_per_amp:
+    name: "Batteri W per A"
+    min: 10
+    max: 200
+    step: 1
+    unit_of_measurement: "W/A"
+    mode: box
+
+  max_discharge_current:
+    name: "Max urladdningsström"
+    min: 0
+    max: 200
+    step: 1
+    unit_of_measurement: "A"
+    mode: box
+
+  pi_integral_term:
+    name: "PI integralterm (W)"
+    min: -1000
+    max: 1000
+    step: 1
+    mode: box
+
+  pid_kp:
+    name: "PI Kp"
+    min: 0
+    max: 1
+    step: 0.001
+    mode: box
+
+  pid_ki:
+    name: "PI Ki"
+    min: 0
+    max: 0.01
+    step: 0.0001
+    mode: box
+
+  pid_kff:
+    name: "Feedforward gain"
+    min: 0
+    max: 1
+    step: 0.001
+    mode: box
+
+  pid_ramp_step:
+    name: "Ramp-steg (A/10s)"
+    min: 1
+    max: 50
+    step: 1
+    mode: box
+
+  battery_charge_current_cheap:
+    name: "Laddström CHEAP"
+    min: 0
+    max: 50
+    step: 1
+    unit_of_measurement: "A"
+    mode: box
+
+  battery_charge_current_supercheap:
+    name: "Laddström SUPER CHEAP"
+    min: 0
+    max: 50
+    step: 1
+    unit_of_measurement: "A"
+    mode: box
+
+  battery_discharge_current_expensive:
+    name: "Urladdström EXPENSIVE"
+    min: 0
+    max: 50
+    step: 1
+    unit_of_measurement: "A"
+    mode: box
+
+  battery_discharge_current_ultraexpensive:
+    name: "Urladdström ULTRA EXPENSIVE"
+    min: 0
+    max: 50
+    step: 1
+    unit_of_measurement: "A"
+    mode: box
+
+  battery_soc_max_charge:
+    name: "Max SoC (laddning)"
+    min: 0
+    max: 100
+    step: 1
+    unit_of_measurement: "%"
+    mode: box
+
+  battery_soc_min_peakshave:
+    name: "Min SoC peakshave"
+    min: 0
+    max: 100
+    step: 1
+    unit_of_measurement: "%"
+    mode: box
+
+  battery_capacity_kwh:
+    name: "Batterikapacitet"
+    min: 1
+    max: 100
+    step: 0.1
+    unit_of_measurement: "kWh"
+    mode: box
+
+  export_allow_watt:
+    name: "Tillåten export (W) vid pris-urladdning"
+    min: 0
+    max: 10000
+    step: 100
+    unit_of_measurement: "W"
+    mode: box
+
+  nordpool_cheap_margin_percent:
+    name: "Cheap-margin (%)"
+    min: 0
+    max: 80
+    step: 1
+    unit_of_measurement: "%"
+    mode: box
+
+  nordpool_supercheap_offset_ore:
+    name: "Super cheap offset (öre)"
+    min: 0
+    max: 100
+    step: 1
+    unit_of_measurement: "öre"
+    mode: box
+
+  nordpool_expensive_margin_percent:
+    name: "Expensive-margin (%)"
+    min: 0
+    max: 200
+    step: 1
+    unit_of_measurement: "%"
+    mode: box
+
+  nordpool_ultraexpensive_offset_ore:
+    name: "Ultra expensive offset (öre)"
+    min: 0
+    max: 200
+    step: 1
+    unit_of_measurement: "öre"
+    mode: box
+
+  battery_price_spread_threshold:
+    name: "Arbitrage spread-tröskel (SEK/kWh)"
+    min: 0
+    max: 5
+    step: 0.05
+    unit_of_measurement: "SEK/kWh"
+    mode: box
+
+
+############################
+# SENSOR – integration (W→kWh)
+############################
+sensor:
+  - platform: integration
+    source: sensor.total_power
+    name: energy_from_power_total
+    unit_prefix: k
+    round: 3
+    method: trapezoidal
+
+
+############################
+# UTILITY_METER – energi innevarande timme
+############################
+utility_meter:
+  energy_current_hour:
+    source: sensor.energy_from_power_total
+    cycle: hourly
+
+
+############################
+# TEMPLATE-SENSORER + BINARY_SENSOR
+############################
+template:
+  - binary_sensor:
+      - name: "Battery price arbitrage OK"
+        unique_id: battery_price_arbitrage_ok
+        state: >
+          {% set spread = states('sensor.nordpool_arbitrage_spread_24h_v3')|float(0) %}
+          {% set threshold = states('input_number.battery_price_spread_threshold')|float(0.2) %}
+          {{ spread >= threshold }}
+        icon: >
+          {% if is_state('binary_sensor.battery_price_arbitrage_ok','on') %}
+            mdi:swap-vertical-circle
+          {% else %}
+            mdi:swap-vertical
+          {% endif %}
+
+  - sensor:
+      ###################################################################
+      # Total Power – summera 3 faser (Solinteg grid power)
+      ###################################################################
+      - name: "Total Power"
+        unique_id: power_total
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        state: >-
+          {{
+            (
+              states('sensor.solinteg_inverter_meter_active_power_l1')|float(0) +
+              states('sensor.solinteg_inverter_meter_active_power_l2')|float(0) +
+              states('sensor.solinteg_inverter_meter_active_power_l3')|float(0)
+            ) | round(1)
+          }}
+
+      ###################################################################
+      # Medeleffekt innevarande timme (byggt på energy_current_hour)
+      ###################################################################
+      - name: "Medeleffekt innevarande timme"
+        unique_id: avg_power_current_hour
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        state: >
+          {% set e_kwh = states('sensor.energy_current_hour') | float(0) %}
+          {% set minute = now().minute | int %}
+          {% set second = now().second | int %}
+          {% set t_elapsed = minute * 60 + second %}
+          {% if t_elapsed <= 0 %}
+            0
+          {% else %}
+            {{ (e_kwh * 1000 * 3600 / t_elapsed) | round(1) }}
+          {% endif %}
+
+      ###################################################################
+      # ALLOWED IMPORT – dynamisk maximport (peakshave-mål)
+      ###################################################################
+      - name: "allowed_import_power_this_moment"
+        unique_id: allowed_import_power_this_moment
+        unit_of_measurement: "W"
+        state: >
+          {% set raw_limit = states('input_number.max_hourly_import')|float(3000) %}
+          {% set safety_factor = 0.90 %}
+          {% set limit = raw_limit * safety_factor %}
+          {% set avg   = states('sensor.medeleffekt_innevarande_timme')|float(0) %}
+
+          {% set minute = now().minute|int %}
+          {% set second = now().second|int %}
+          {% set t_elapsed = minute * 60 + second %}
+          {% set T = 3600 %}
+
+          {% if t_elapsed <= 0 or t_elapsed >= T - 5 %}
+            {{ limit | round(1) }}
+          {% else %}
+            {% set e_so_far = avg * t_elapsed %}
+            {% set allowed_raw = (limit * T - e_so_far) / (T - t_elapsed) %}
+            {% if allowed_raw > limit %}
+              {{ limit | round(1) }}
+            {% elif allowed_raw < 0 %}
+              0
+            {% else %}
+              {{ allowed_raw | round(1) }}
+            {% endif %}
+          {% endif %}
+
+      ###################################################################
+      # IMPORT ERROR – faktisk import minus allowed import
+      ###################################################################
+      - name: "import_error_w"
+        unique_id: import_error_w
+        unit_of_measurement: "W"
+        state: >
+          {% set raw = states('sensor.solinteg_inverter_meter_active_power')|float(0) %}
+          {% set import_now = -raw if raw < 0 else 0 %}
+          {% set allowed = states('sensor.allowed_import_power_this_moment')|float(0) %}
+          {{ (import_now - allowed) | round(1) }}
+
+      ###################################################################
+      # SAFE EXTRA IMPORT POWER – marginal uppåt innan vi spränger timmedel
+      ###################################################################
+      - name: "safe_extra_import_power"
+        unique_id: safe_extra_import_power
+        unit_of_measurement: "W"
+        state: >
+          {% set allowed = states('sensor.allowed_import_power_this_moment')|float(0) %}
+          {% set raw    = states('sensor.solinteg_inverter_meter_active_power')|float(0) %}
+          {% set import_now = -raw if raw < 0 else 0 %}
+          {% set margin = 300 %}
+          {% set headroom = allowed - import_now - margin %}
+          {{ [headroom, 0] | max }}
+
+      ###################################################################
+      # NORDPOOL PRISLÄGE – cheap/expensive osv
+      ###################################################################
+      - name: "Nordpool prisläge"
+        unique_id: nordpool_price_state
+        state: >
+          {% set s = 'sensor.nordpool_kwh_se1_sek_2_10_025' %}
+          {% set p = states(s)|float(0) %}
+
+          {% set avg  = state_attr(s, 'average')|float(0) %}
+          {% set minp = state_attr(s, 'min')|float(0) %}
+          {% set maxp = state_attr(s, 'max')|float(0) %}
+
+          {% if avg == 0 or minp == 0 or maxp == 0 %}
+            unknown
+          {% else %}
+            {% set cheap_pct      = states('input_number.nordpool_cheap_margin_percent')|float(20) %}
+            {% set super_off      = states('input_number.nordpool_supercheap_offset_ore')|float(5) %}
+            {% set expensive_pct  = states('input_number.nordpool_expensive_margin_percent')|float(20) %}
+            {% set ultra_off      = states('input_number.nordpool_ultraexpensive_offset_ore')|float(5) %}
+
+            {% set cheap_limit      = avg * (1 - cheap_pct / 100) %}
+            {% set supercheap_limit = minp + super_off %}
+            {% set expensive_limit  = avg * (1 + expensive_pct / 100) %}
+            {% set ultraexp_limit   = maxp - ultra_off %}
+
+            {% if p <= supercheap_limit %}
+              super_cheap
+            {% elif p <= cheap_limit %}
+              cheap
+            {% elif p >= ultraexp_limit %}
+              ultra_expensive
+            {% elif p >= expensive_limit %}
+              expensive
+            {% else %}
+              neutral
+            {% endif %}
+          {% endif %}
+        attributes:
+          cheap_limit_ore: >
+            {% set s = 'sensor.nordpool_kwh_se1_sek_2_10_025' %}
+            {% set avg = state_attr(s, 'average')|float(0) %}
+            {% if avg == 0 %}
+              0
+            {% else %}
+              {% set cheap_pct = states('input_number.nordpool_cheap_margin_percent')|float(20) %}
+              {{ (avg * (1 - cheap_pct/100))|round(1) }}
+            {% endif %}
+
+          supercheap_limit_ore: >
+            {% set s = 'sensor.nordpool_kwh_se1_sek_2_10_025' %}
+            {% set minp = state_attr(s, 'min')|float(0) %}
+            {% if minp == 0 %}
+              0
+            {% else %}
+              {{ (minp + states('input_number.nordpool_supercheap_offset_ore')|float(5))|round(1) }}
+            {% endif %}
+
+          expensive_limit_ore: >
+            {% set s = 'sensor.nordpool_kwh_se1_sek_2_10_025' %}
+            {% set avg = state_attr(s, 'average')|float(0) %}
+            {% if avg == 0 %}
+              0
+            {% else %}
+              {% set expensive_pct = states('input_number.nordpool_expensive_margin_percent')|float(20) %}
+              {{ (avg * (1 + expensive_pct/100))|round(1) }}
+            {% endif %}
+
+          ultraexpensive_limit_ore: >
+            {% set s = 'sensor.nordpool_kwh_se1_sek_2_10_025' %}
+            {% set maxp = state_attr(s, 'max')|float(0) %}
+            {% if maxp == 0 %}
+              0
+            {% else %}
+              {{ (maxp - states('input_number.nordpool_ultraexpensive_offset_ore')|float(5))|round(1) }}
+            {% endif %}
+
+      ###################################################################
+      # NORDPOOL MINPRIS KOMMANDE 24H v3
+      ###################################################################
+      - name: "Nordpool minpris kommande 24h v3"
+        unique_id: nordpool_minpris_kommande_24h_v3
+        unit_of_measurement: "SEK/kWh"
+        state: >
+          {% set e = 'sensor.nordpool_kwh_se1_sek_2_10_025' %}
+
+          {% set now_ts = as_timestamp(now()) %}
+          {% set end_ts = now_ts + 24*3600 %}
+
+          {% set raw_today    = state_attr(e, 'raw_today')    or [] %}
+          {% set raw_tomorrow = state_attr(e, 'raw_tomorrow') or [] %}
+
+          {% set vals = [] %}
+          {% for item in raw_today + raw_tomorrow %}
+            {% set st = as_timestamp(item['start']) %}
+            {% if st != none and now_ts <= st < end_ts %}
+              {% set vals = vals + [ item['value'] | float ] %}
+            {% endif %}
+          {% endfor %}
+
+          {% if vals|length > 0 %}
+            {{ (vals|min / 100) | round(3) }}
+          {% else %}
+            unknown
+          {% endif %}
+
+      ###################################################################
+      # SPOTPRIS DIFF KOMMANDE 24H v3 (nupris – minpris)
+      ###################################################################
+      - name: "Spotpris diff kommande 24h v3"
+        unique_id: spotpris_diff_kommande_24h_v3
+        unit_of_measurement: "SEK/kWh"
+        state: >
+          {% set e = 'sensor.nordpool_kwh_se1_sek_2_10_025' %}
+          {% set pris_nu = (states(e) | float(0)) / 100 %}
+          {% set min24   = states('sensor.nordpool_minpris_kommande_24h_v3') | float(0) %}
+
+          {% if min24 > 0 %}
+            {{ (pris_nu - min24) | round(3) }}
+          {% else %}
+            0
+          {% endif %}
+
+      ###################################################################
+      # NORDPOOL ARBITRAGE SPREAD 24H v3
+      ###################################################################
+      - name: "Nordpool arbitrage spread 24h v3"
+        unique_id: nordpool_arbitrage_spread_24h_v3
+        unit_of_measurement: "SEK/kWh"
+        state: >
+          {% set e = 'sensor.nordpool_kwh_se1_sek_2_10_025' %}
+          {% set now_ts = as_timestamp(now()) %}
+
+          {% set raw_today    = state_attr(e, 'raw_today')    or [] %}
+          {% set raw_tomorrow = state_attr(e, 'raw_tomorrow') or [] %}
+
+          {% set ns = namespace(min_v = None, max_v = None) %}
+
+          {% for item in raw_today %}
+            {% set st = as_timestamp(item['start']) %}
+            {% if st is not none and st >= now_ts %}
+              {% set v = item['value'] | float %}
+              {% if ns.min_v is none or v < ns.min_v %}
+                {% set ns.min_v = v %}
+              {% endif %}
+              {% if ns.max_v is none or v > ns.max_v %}
+                {% set ns.max_v = v %}
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+
+          {% for item in raw_tomorrow %}
+            {% set v = item['value'] | float %}
+            {% if ns.min_v is none or v < ns.min_v %}
+              {% set ns.min_v = v %}
+            {% endif %}
+            {% if ns.max_v is none or v > ns.max_v %}
+              {% set ns.max_v = v %}
+            {% endif %}
+          {% endfor %}
+
+          {% if ns.min_v is not none and ns.max_v is not none %}
+            {{ ((ns.max_v - ns.min_v) / 100) | round(3) }}
+          {% else %}
+            unknown
+          {% endif %}
+
+      ###################################################################
+      # BATTERI STYRLÄGE (idle/peakshaving/price_charge/price_discharge/low_soc_protect)
+      ###################################################################
+      - name: "Batteri styrläge"
+        unique_id: battery_control_mode
+        icon: >
+          {% set s = states('sensor.batteri_styrlage') %}
+          {% if s == 'peakshaving' %}
+            mdi:flash-alert
+          {% elif s == 'price_charge' %}
+            mdi:battery-arrow-up
+          {% elif s == 'price_discharge' %}
+            mdi:battery-arrow-down
+          {% elif s == 'low_soc_protect' %}
+            mdi:battery-alert-variant-outline
+          {% else %}
+            mdi:battery
+          {% endif %}
+        state: >
+          {% set soc           = states('sensor.solinteg_inverter_battery_soc')|float(0) %}
+          {% set min_soc_price = states('number.solinteg_inverter_battery_soc_min_on_grid')|float(20) %}
+          {% set min_soc_peak  = states('input_number.battery_soc_min_peakshave')|float(15) %}
+          {% set error_w       = states('sensor.import_error_w')|float(0) %}
+          {% set price_state   = states('sensor.nordpool_prislage') %}
+          {% set charge_sp     = states('number.solinteg_inverter_battery_charge_current_limit')|float(0) %}
+          {% set discharge_sp  = states('number.solinteg_inverter_battery_discharge_current_limit')|float(0) %}
+          {% set prev_state    = states('sensor.batteri_styrlage') %}
+
+          {# 1) Pris-laddning högst prio #}
+          {% if error_w <= 2
+                and price_state in ['cheap','super_cheap']
+                and charge_sp > 0 %}
+            price_charge
+
+          {# 2) Low SoC – skydda absolut minimum (peakshave-min) #}
+          {% elif soc <= min_soc_peak %}
+            low_soc_protect
+
+          {# 3) Peakshaving – ny aktivering eller hålla kvar #}
+          {% elif (error_w > 5 or prev_state == 'peakshaving')
+                and discharge_sp > 0
+                and soc > min_soc_peak %}
+            peakshaving
+
+          {# 4) Pris-urladdning – bara över pris-min #}
+          {% elif error_w <= 2
+                and price_state in ['expensive','ultra_expensive']
+                and discharge_sp > 0
+                and soc > min_soc_price %}
+            price_discharge
+
+          {# 5) Default #}
+          {% else %}
+            idle
+          {% endif %}
