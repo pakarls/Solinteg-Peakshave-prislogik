@@ -1,5 +1,10 @@
 # Home Assistant – Solinteg Peakshaving & Prislogik (PI + Feedforward)
 
+Ansvarsfriskrivning
+
+All styrning av batterier, nätimport och export sker på egen risk.
+Verifiera alltid gränsvärden mot huvudsäkringar, nätägarens regler och växelriktarens specifikationer innan du kör skarpt.
+
 Det här projektet innehåller en komplett uppsättning konfiguration för att styra ett Solinteg-batteri via Home Assistant med:
 
 - Peakshaving mot valfri timmedeleffekt
@@ -62,6 +67,11 @@ Projektet är byggt för Home Assistant med:
   Kör du annan region/valuta behöver du justera entity-id i templaten.
 
 ---
+Ansvarsfriskrivning
+
+All styrning av batterier, nätimport och export sker på egen risk.
+Verifiera alltid gränsvärden mot huvudsäkringar, nätägarens regler och växelriktarens specifikationer innan du kör skarpt.
+
 
 ## Struktur
 
@@ -74,3 +84,5 @@ Repo:t är tänkt att se ut ungefär så här:
 ├─ automations/
 │  └─ effektstyrning_pi_ff.yaml  # PI+FF-automation (valfritt att separera)
 └─ README.md
+
+
