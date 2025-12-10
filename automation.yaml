@@ -1,0 +1,504 @@
+- id: effektstyrning_prislogik
+  alias: Effektstyrning – prislogik
+  description: PI-regulator med feedforward + prislogik, peakshaving har prio
+  mode: single
+
+  trigger:
+    - platform: time_pattern
+      seconds: "/10"
+
+  variables:
+    # ---- Grunddata ----
+    soc: >
+      {{ states('sensor.solinteg_inverter_battery_soc')|float(0) }}
+
+    # Ny naming
+    min_soc_price: >
+      {{ states('number.solinteg_inverter_battery_soc_min_on_grid')|float(20) }}
+
+    min_soc_peak: >
+      {{ states('input_number.battery_soc_min_peakshave')|float(15) }}
+
+    max_soc_charge: >
+      {{ states('input_number.battery_soc_max_charge')|float(90) }}
+
+    w_per_amp: >
+      {{ states('input_number.battery_w_per_amp')|float(50) }}
+
+    max_current: >
+      {{ states('input_number.max_discharge_current')|float(100) }}
+
+    # ---- PID-parametrar ----
+    Kp: >
+      {{ states('input_number.pid_kp')|float(0.08) }}
+
+    Ki: >
+      {{ states('input_number.pid_ki')|float(0.001) }}
+
+    ff_gain: >
+      {{ states('input_number.pid_kff')|float(0.07) }}
+
+    ramp_step: >
+      {{ states('input_number.pid_ramp_step')|float(15) }}
+
+    # ---- Pris-läge från Nordpool-helper ----
+    price_state: >
+      {{ states('sensor.nordpool_prislage') }}
+
+    # ---- Pris-arbitrage ON/OFF (baserat på prisdiff kommande 24h) ----
+    arbitrage_ok: >
+      {{ is_state('binary_sensor.battery_price_arbitrage_ok', 'on') }}
+
+    # ---- Fel i W: använd samma som i UI-sensorn ----
+    error_w: >
+      {{ states('sensor.import_error_w')|float(0) }}
+
+    # Extra: hur mycket effektmarginal vi har
+    safe_extra_import: >
+      {{ states('sensor.safe_extra_import_power')|float(0) }}
+
+    # ---- Aktuell import i W (positiv bara vid import) ----
+    import_now_w: >
+      {% set raw = states('sensor.solinteg_inverter_meter_active_power')|float(0) %}
+      {{ -raw if raw < 0 else 0 }}
+
+    # ---- Integralterm (lagrad i W) ----
+    I_prev: >
+      {{ states('input_number.pi_integral_term')|float(0) }}
+
+    I_new: >
+      {% set Ts   = 10 %}
+      {% set Ki_v = Ki | float %}
+      {% set e    = error_w | float %}
+      {% set Iold = I_prev | float %}
+
+      {% set I_raw = Iold + e * Ki_v * Ts %}
+
+      {% set I_max = 200.0 %}
+      {% set I_min = -200.0 %}
+
+      {% if I_raw > I_max %}
+        {{ I_max }}
+      {% elif I_raw < I_min %}
+        {{ I_min }}
+      {% else %}
+        {{ I_raw }}
+      {% endif %}
+
+    # ---- P-del i A ----
+    P_current: >
+      {% set A = ((error_w | float) * (Kp | float)) / (w_per_amp | float) %}
+      {% if A < 0 %} 0 {% else %} {{ A }} {% endif %}
+
+    # ---- Feedforward i A ----
+    FF_current: >
+      {% set ew = error_w | float %}
+      {% set ff_W = (ew if ew > 0 else 0) * (ff_gain | float) %}
+      {% set A = ff_W / (w_per_amp | float) %}
+      {% if A < 0 %} 0 {% else %} {{ A }} {% endif %}
+
+    # ---- PI + FF (rå setpoint i A) ----
+    PI_FF_A: >
+      {% set P  = P_current  | float %}
+      {% set I  = I_new      | float %}
+      {% set FF = FF_current | float %}
+      {% set A  = P + (I / (w_per_amp | float)) + FF %}
+      {% if A < 0 %}
+        0
+      {% else %}
+        {{ A }}
+      {% endif %}
+
+    # ---- Nuvarande urladdningsström ----
+    current_A: >
+      {{ states('number.solinteg_inverter_battery_discharge_current_limit')|float(0) }}
+
+    # ---- Nuvarande laddningsström ----
+    current_charge_A: >
+      {{ states('number.solinteg_inverter_battery_charge_current_limit')|float(0) }}
+
+    # ---- Mjuk ramp (upp/ned) ----
+    output_A: >
+      {% set target = PI_FF_A  | float %}
+      {% set curr   = current_A | float %}
+      {% set step   = ramp_step | float %}
+      {% if target > curr + step %}
+        {{ curr + step }}
+      {% elif target < curr - step %}
+        {{ curr - step }}
+      {% else %}
+        {{ target }}
+      {% endif %}
+
+    # ---- Klipp mot maxström ----
+    final_A: >
+      {% set out = output_A | float %}
+      {% if out > (max_current | float) %}
+        {{ max_current }}
+      {% else %}
+        {{ out }}
+      {% endif %}
+
+    # ---- Justerbara strömmar via input_number ----
+    cheap_charge_A: >
+      {{ states('input_number.battery_charge_current_cheap')|float(3) }}
+
+    supercheap_charge_A: >
+      {{ states('input_number.battery_charge_current_supercheap')|float(8) }}
+
+    expensive_discharge_A: >
+      {{ states('input_number.battery_discharge_current_expensive')|float(5) }}
+
+    ultraexpensive_discharge_A: >
+      {{ states('input_number.battery_discharge_current_ultraexpensive')|float(15) }}
+
+    # ---- Target-A för EXPENSIVE: Inställbart värde ----
+    price_zeroimport_target_A: >
+      {% set p_grid        = states('sensor.solinteg_inverter_meter_active_power')|float(0) %}
+      {% set export_target = states('input_number.export_allow_watt')|float(0) %}
+      {% set w_per_amp     = states('input_number.battery_w_per_amp')|float(50) %}
+      {% set maxA_price    = states('input_number.battery_discharge_current_expensive')|float(5) %}
+
+      {# p_grid > 0 = export, p_grid < 0 = import #}
+
+      {# Aktuell export i W (import räknas som 0 export) #}
+      {% set export_now = p_grid if p_grid > 0 else 0 %}
+
+      {# Fel relativt export-mål #}
+      {% set error_w = export_target - export_now %}
+
+      {# Om vi redan exporterar >= target: ingen extra urladdning #}
+      {% if error_w <= 0 %}
+        0
+      {% else %}
+        {% set A_raw = error_w / w_per_amp %}
+        {% if A_raw > maxA_price %}
+          {{ maxA_price }}
+        {% elif A_raw < 0 %}
+          0
+        {% else %}
+          {{ A_raw }}
+        {% endif %}
+      {% endif %}
+
+  condition: []
+
+  action:
+    #######################################################################
+    # STEG 1 – URLADDNING (peakshaving + low SoC + dyra priser + neutral)
+    #######################################################################
+    - choose:
+
+        ###################################################################
+        # 0) PEAKSHAVING VIA LADDNING – dra ner laddning innan urladdning
+        ###################################################################
+        - conditions:
+            - condition: template
+              value_template: >
+                {{ (error_w | float) > 30
+                   and (soc | float) > (min_soc_peak | float)
+                   and price_state in ['cheap', 'super_cheap']
+                   and (arbitrage_ok | bool)
+                   and (current_charge_A | float) > 0 }}
+          sequence:
+            # stäng urladdning, peakshava först genom att släppa laddning
+            - service: number.set_value
+              target:
+                entity_id: number.solinteg_inverter_battery_discharge_current_limit
+              data:
+                value: 0
+
+            # rampa ner laddströmmen stegvis
+            - service: number.set_value
+              target:
+                entity_id: number.solinteg_inverter_battery_charge_current_limit
+              data:
+                value: >
+                  {% set curr = current_charge_A | float(0) %}
+                  {% set step = ramp_step | float(5) %}
+                  {% set new  = curr - step %}
+                  {% if new < 0 %}
+                    0
+                  {% else %}
+                    {{ new | round(0) | int }}
+                  {% endif %}
+
+        ###################################################################
+        # 1) PEAKSHAVING – PI styr urladdning (ALLTID prio vid positivt fel)
+        ###################################################################
+        - conditions:
+            - condition: template
+              value_template: >
+                {{ (error_w | float) > 30 and (soc | float) > (min_soc_peak | float) }}
+          sequence:
+            - service: select.select_option
+              target:
+                entity_id: select.solinteg_inverter_working_mode
+              data:
+                option: "ToU"
+
+            - service: input_number.set_value
+              target:
+                entity_id: input_number.pi_integral_term
+              data:
+                value: "{{ I_new | float }}"
+
+            - service: number.set_value
+              target:
+                entity_id: number.solinteg_inverter_battery_discharge_current_limit
+              data:
+                value: "{{ final_A | float | round(0) | int }}"
+
+            # När vi peakshavar vill vi inte ladda samtidigt
+            - service: number.set_value
+              target:
+                entity_id: number.solinteg_inverter_battery_charge_current_limit
+              data:
+                value: 0
+
+        ###################################################################
+        # 2) SoC FÖR LÅG – blockera bara URLADDNING
+        ###################################################################
+        - conditions:
+            - condition: template
+              value_template: >
+                {{ (soc | float) <= (min_soc_peak | float) }}
+          sequence:
+            - service: number.set_value
+              target:
+                entity_id: number.solinteg_inverter_battery_discharge_current_limit
+              data:
+                value: 0
+
+            - service: input_number.set_value
+              target:
+                entity_id: input_number.pi_integral_term
+              data:
+                value: "{{ (I_prev | float) * 0.85 }}"
+
+        ###################################################################
+        # 3) BILLIGT PRIS – se till att vi INTE urladdar när vi vill ladda
+        ###################################################################
+        - conditions:
+            - condition: template
+              value_template: >
+                {{ (error_w | float) <= 5
+                   and (safe_extra_import | float) > 300
+                   and (soc | float) < (max_soc_charge | float)
+                   and price_state in ['cheap', 'super_cheap']
+                   and (arbitrage_ok | bool) }}
+          sequence:
+            - service: number.set_value
+              target:
+                entity_id: number.solinteg_inverter_battery_discharge_current_limit
+              data:
+                value: 0
+
+        ###################################################################
+        # 4a) PRIS ULTRA EXPENSIVE – aggressiv urladdning (om arbitrage_ok)
+        ###################################################################
+        - conditions:
+            - condition: template
+              value_template: >
+                {{ (error_w | float) <= 5
+                   and (soc | float) > (min_soc_price | float + 5)
+                   and price_state == 'ultra_expensive'
+                   and (arbitrage_ok | bool) }}
+          sequence:
+            - service: number.set_value
+              target:
+                entity_id: number.solinteg_inverter_battery_charge_current_limit
+              data:
+                value: 0
+
+            - service: number.set_value
+              target:
+                entity_id: number.solinteg_inverter_battery_discharge_current_limit
+              data:
+                value: "{{ ultraexpensive_discharge_A | float }}"
+
+            - service: select.select_option
+              target:
+                entity_id: select.solinteg_inverter_working_mode
+              data:
+                option: "ToU"
+
+        ###################################################################
+        # 4b) PRIS EXPENSIVE – urladdning för att hålla import ≈ 0 W
+        ###################################################################
+        - conditions:
+            - condition: template
+              value_template: >
+                {{ (error_w | float) <= 5
+                   and (soc | float) > (min_soc_price | float + 5)
+                   and price_state == 'expensive'
+                   and (arbitrage_ok | bool) }}
+          sequence:
+            - service: number.set_value
+              target:
+                entity_id: number.solinteg_inverter_battery_charge_current_limit
+              data:
+                value: 0
+
+            - service: number.set_value
+              target:
+                entity_id: number.solinteg_inverter_battery_discharge_current_limit
+              data:
+              # rampning mot pris-zeroimport-target
+                value: >
+                  {% set curr   = current_A | float(0) %}
+                  {% set target = price_zeroimport_target_A | float(0) %}
+                  {% set step   = ramp_step | float(5) %}
+                  {% if target > curr + step %}
+                    {{ (curr + step) | round(0) | int }}
+                  {% elif target < curr - step %}
+                    {{ (curr - step) | round(0) | int }}
+                  {% else %}
+                    {{ target | round(0) | int }}
+                  {% endif %}
+
+            - service: select.select_option
+              target:
+                entity_id: select.solinteg_inverter_working_mode
+              data:
+                option: "ToU"
+
+        ###################################################################
+        # 4c) PRIS DYRT men arbitrage EJ OK – stäng pris-urladdning
+        ###################################################################
+        - conditions:
+            - condition: template
+              value_template: >
+                {{ (error_w | float) <= 5
+                   and price_state in ['expensive', 'ultra_expensive']
+                   and not (arbitrage_ok | bool) }}
+          sequence:
+            - service: number.set_value
+              target:
+                entity_id: number.solinteg_inverter_battery_discharge_current_limit
+              data:
+                value: 0
+
+            - service: number.set_value
+              target:
+                entity_id: number.solinteg_inverter_battery_charge_current_limit
+              data:
+                value: 0
+
+            - service: input_number.set_value
+              target:
+                entity_id: input_number.pi_integral_term
+              data:
+                value: "{{ (I_prev | float) * 0.85 }}"
+
+        ###################################################################
+        # 5) LITET FEL / NEUTRALT PRIS – rampa ner urladdning
+        ###################################################################
+        - conditions:
+            - condition: template
+              value_template: >
+                {{ (error_w | float) > -50 and (error_w | float) <= 30
+                   and (soc | float) > (min_soc_peak | float)
+                   and price_state not in ['cheap', 'super_cheap',
+                                           'expensive', 'ultra_expensive'] }}
+          sequence:
+            - service: number.set_value
+              target:
+                entity_id: number.solinteg_inverter_battery_discharge_current_limit
+              data:
+                value: >
+                  {% set curr = current_A | float %}
+                  {% set step = ramp_step | float %}
+                  {% set new  = curr - step %}
+                  {% if new < 0 %}
+                    0
+                  {% else %}
+                    {{ new | round(0) | int }}
+                  {% endif %}
+
+            - service: input_number.set_value
+              target:
+                entity_id: input_number.pi_integral_term
+              data:
+                value: "{{ (I_prev | float) * 0.85 }}"
+
+    #######################################################################
+    # STEG 2 – LADDNING (prislogik, low SoC påverkar inte laddning)
+    #######################################################################
+    - choose:
+
+        ###################################################################
+        # 3a) PRIS SUPER CHEAP – aggressiv laddning
+        ###################################################################
+        - conditions:
+            - condition: template
+              value_template: >
+                {{ (error_w | float) <= 5
+                   and (safe_extra_import | float) > 300
+                   and (soc | float) < (max_soc_charge | float)
+                   and price_state == 'super_cheap'
+                   and (arbitrage_ok | bool) }}
+          sequence:
+            - service: number.set_value
+              target:
+                entity_id: number.solinteg_inverter_battery_charge_current_limit
+              data:
+                value: "{{ supercheap_charge_A | float }}"
+
+            - service: select.select_option
+              target:
+                entity_id: select.solinteg_inverter_working_mode
+              data:
+                option: "UPS"
+
+        ###################################################################
+        # 3b) PRIS CHEAP – normal laddning
+        ###################################################################
+        - conditions:
+            - condition: template
+              value_template: >
+                {{ (error_w | float) <= 5
+                   and (safe_extra_import | float) > 300
+                   and (soc | float) < (max_soc_charge | float)
+                   and price_state == 'cheap'
+                   and (arbitrage_ok | bool) }}
+          sequence:
+            - service: number.set_value
+              target:
+                entity_id: number.solinteg_inverter_battery_charge_current_limit
+              data:
+                value: "{{ cheap_charge_A | float }}"
+
+            - service: select.select_option
+              target:
+                entity_id: select.solinteg_inverter_working_mode
+              data:
+                option: "UPS"
+
+      default:
+        # Default – ingen prisladdning
+        - service: number.set_value
+          target:
+            entity_id: number.solinteg_inverter_battery_charge_current_limit
+          data:
+            value: 0
+
+
+- id: batteri_nollstall_vid_idle
+  alias: Batteri – nollställ ström vid idle
+  description: Sätter ladd/urladdningsström till 0 när batteristyrläget går till idle
+  mode: single
+
+  trigger:
+    - platform: state
+      entity_id: sensor.batteri_styrlage
+      to: "idle"
+
+  action:
+    - service: number.set_value
+      target:
+        entity_id:
+          - number.solinteg_inverter_battery_discharge_current_limit
+          - number.solinteg_inverter_battery_charge_current_limit
+      data:
+        value: 0
