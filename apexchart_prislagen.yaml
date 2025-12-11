@@ -1,0 +1,221 @@
+type: vertical-stack
+cards:
+  - type: custom:mushroom-title-card
+    title: Nordpool – pris & gränser
+    subtitle: Spotpris vs cheap / super / expensive / ultra
+  - type: custom:apexcharts-card
+    now:
+      show: true
+      label: NOW
+    graph_span: 2d
+    apex_config:
+      chart:
+        zoom:
+          enabled: true
+        toolbar:
+          show: true
+          tools:
+            zoom: true
+            zoomin: true
+            zoomout: true
+            pan: true
+            reset: true
+        height: 500px
+      legend:
+        showForSingleSeries: true
+      yaxis:
+        decimalsInFloat: 2
+        forceNiceScale: true
+      markers:
+        size: 0
+      xaxis:
+        labels:
+          datetimeFormatter:
+            hour: HH
+    all_series_config:
+      show:
+        offset_in_name: false
+    header:
+      title: Nordpool spotpris
+      show: true
+      show_states: true
+      colorize_states: true
+    span:
+      start: day
+      offset: +0h
+    series:
+      - entity: sensor.nordpool_kwh_se1_sek_2_10_025
+        type: line
+        color: "#FFB62E"
+        name: Today
+        unit: ÖRE/kWh
+        float_precision: 2
+        extend_to: false
+        stroke_width: 1.5
+        curve: stepline
+        show:
+          in_header: false
+          legend_value: false
+          extremas: true
+        data_generator: |
+          return (entity.attributes.raw_today ?? []).map(d => [
+            new Date(d.start).getTime(), d.value
+          ]);
+      - entity: sensor.nordpool_kwh_se1_sek_2_10_025
+        type: line
+        color: "#2eb9ff"
+        name: Tomorrow
+        unit: ÖRE/kWh
+        float_precision: 2
+        extend_to: false
+        stroke_width: 1.5
+        curve: stepline
+        show:
+          in_header: false
+          legend_value: false
+          extremas: true
+        data_generator: |
+          return (entity.attributes.raw_tomorrow ?? []).map(m => [
+            new Date(m.start).getTime(), m.value
+          ]);
+      - entity: sensor.nordpool_kwh_se1_sek_2_10_025
+        name: Nuvarande pris
+        unit: ÖRE/kWh
+        type: column
+        float_precision: 2
+        show:
+          in_chart: false
+          in_header: true
+          legend_value: false
+      - entity: sensor.nordpool_kwh_se1_sek_2_10_025
+        name: Medelpris
+        type: line
+        color: f00000
+        stroke_width: 1.5
+        curve: straight
+        extend_to: false
+        show:
+          in_header: true
+          legend_value: false
+          extremas: false
+        data_generator: |
+          const today = entity.attributes.raw_today || [];
+          const tomorrow = entity.attributes.raw_tomorrow || [];
+          const out = [];
+          if (today.length > 0) {
+            const avgToday = today.reduce((s,d)=>s + Number(d.value||0), 0) / today.length;
+            const t0 = new Date(today[0].start).getTime();
+            const lastToday = today[today.length - 1];
+            const t1 = new Date(lastToday.start).getTime() + 60*60*1000;
+            out.push([t0, avgToday], [t1, avgToday]);
+          }
+          if (tomorrow.length > 0) {
+            const avgTomorrow = tomorrow.reduce((s,d)=>s + Number(d.value||0), 0) / tomorrow.length;
+            const t0 = new Date(tomorrow[0].start).getTime();
+            const lastTom = tomorrow[tomorrow.length - 1];
+            const t1 = new Date(lastTom.start).getTime() + 60*60*1000;
+            out.push([t0, avgTomorrow], [t1, avgTomorrow]);
+          }
+          return out;
+      - entity: sensor.nordpool_kwh_se1_sek_2_10_025
+        name: _scale_max
+        type: line
+        color: rgba(0,0,0,0)
+        opacity: 0
+        stroke_width: 0
+        curve: straight
+        extend_to: false
+        show:
+          in_header: false
+          legend_value: false
+          extremas: false
+          in_chart: false
+        data_generator: |
+          const src = [
+            ...(entity.attributes.raw_today ?? []),
+            ...(entity.attributes.raw_tomorrow ?? []),
+          ];
+          if (src.length === 0) return [];
+          const m = Math.max(...src.map(d => d.value)) * 1;
+          const t0 = new Date(src[0].start).getTime();
+          return [[t0, m]];
+      - entity: sensor.nordpool_prislage
+        name: Cheap-gräns
+        type: line
+        color: "#4FC3F7"
+        stroke_width: 1
+        curve: straight
+        show:
+          legend_value: false
+        data_generator: |
+          const np = hass.states['sensor.nordpool_kwh_se1_sek_2_10_025'];
+          if (!np) return [];
+          const today = np.attributes.raw_today || [];
+          const tomorrow = np.attributes.raw_tomorrow || [];
+          const src = [...today, ...tomorrow];
+          const cheap = entity.attributes.cheap_limit_ore;
+          if (!cheap || src.length === 0) return [];
+          const t0 = new Date(src[0].start).getTime();
+          const last = src[src.length - 1];
+          const t1 = new Date(last.start).getTime() + 60*60*1000;
+          return [[t0, cheap],[t1, cheap]];
+      - entity: sensor.nordpool_prislage
+        name: Super cheap
+        type: line
+        color: "#66BB6A"
+        stroke_width: 1
+        curve: straight
+        show:
+          legend_value: false
+        data_generator: |
+          const np = hass.states['sensor.nordpool_kwh_se1_sek_2_10_025'];
+          if (!np) return [];
+          const today = np.attributes.raw_today || [];
+          const tomorrow = np.attributes.raw_tomorrow || [];
+          const src = [...today, ...tomorrow];
+          const val = entity.attributes.supercheap_limit_ore;
+          if (!val || src.length === 0) return [];
+          const t0 = new Date(src[0].start).getTime();
+          const last = src[src.length - 1];
+          const t1 = new Date(last.start).getTime() + 60*60*1000;
+          return [[t0, val],[t1, val]];
+      - entity: sensor.nordpool_prislage
+        name: Expensive-gräns
+        type: line
+        color: "#FFA726"
+        stroke_width: 1
+        curve: straight
+        show:
+          legend_value: false
+        data_generator: |
+          const np = hass.states['sensor.nordpool_kwh_se1_sek_2_10_025'];
+          if (!np) return [];
+          const today = np.attributes.raw_today || [];
+          const tomorrow = np.attributes.raw_tomorrow || [];
+          const src = [...today, ...tomorrow];
+          const val = entity.attributes.expensive_limit_ore;
+          if (!val || src.length === 0) return [];
+          const t0 = new Date(src[0].start).getTime();
+          const last = src[src.length - 1];
+          const t1 = new Date(last.start).getTime() + 60*60*1000;
+          return [[t0, val],[t1, val]];
+      - entity: sensor.nordpool_prislage
+        name: Ultra expensive
+        type: line
+        color: "#EF5350"
+        stroke_width: 1
+        curve: straight
+        show:
+          legend_value: false
+        data_generator: |
+          const np = hass.states['sensor.nordpool_kwh_se1_sek_2_10_025'];
+          if (!np) return [];
+          const today = np.attributes.raw_today || [];
+          const tomorrow = np.attributes.raw_tomorrow || [];
+          const src = [...today, ...tomorrow];
+          const val = entity.attributes.ultraexpensive_limit_ore;
+          if (!val || src.length === 0) return [];
+          const t0 = new Date(src[0].start).getTime();
+          const last = src[src.length - 1];
+          const t1 = new Date(last.start).getTime() + 60*60*1000;
+          return [[t0, val],[t1, val]];
