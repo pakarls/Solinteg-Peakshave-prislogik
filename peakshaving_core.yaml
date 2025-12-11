@@ -499,11 +499,12 @@ template:
           {% elif soc <= min_soc_peak %}
             low_soc_protect
 
-          {# 3) Peakshaving – ny aktivering eller hålla kvar #}
-          {% elif (error_w > 5 or prev_state == 'peakshaving')
-                and discharge_sp > 0
-                and soc > min_soc_peak %}
-            peakshaving
+          {# 3) Peakshaving – med hysteres #}
+          {% elif (error_w > 50
+               or (prev_state == 'peakshaving' and error_w > -500))
+            and discharge_sp > 0
+            and soc > min_soc_peak %}
+          peakshaving
 
           {# 4) Pris-urladdning – bara över pris-min #}
           {% elif error_w <= 2
