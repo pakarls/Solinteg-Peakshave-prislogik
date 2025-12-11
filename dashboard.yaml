@@ -100,23 +100,33 @@ sections:
             name: Urladdström ULTRA EXPENSIVE (A)
   - type: grid
     cards:
-      - type: statistics-graph
+      - type: history-graph
         title: Import vs allowed import
         days_to_show: 1
         chart_type: line
         entities:
           - entity: sensor.solinteg_inverter_meter_active_power
             name: Nätimport (W, netto)
+      - type: history-graph
+        entities:
           - entity: sensor.allowed_import_power_this_moment
-            name: Tillåten import (W)
-      - type: statistics-graph
+          - entity: sensor.medeleffekt_innevarande_timme
+  - type: grid
+    cards:
+      - type: heading
+        heading: Ny sektion
+      - type: history-graph
         title: PID – Error (W)
         days_to_show: 1
         chart_type: line
         entities:
           - entity: sensor.import_error_w
             name: Error (W)
-      - type: statistics-graph
+  - type: grid
+    cards:
+      - type: heading
+        heading: Ny sektion
+      - type: history-graph
         title: Batteri – SoC & styrläge (state)
         days_to_show: 1
         chart_type: line
