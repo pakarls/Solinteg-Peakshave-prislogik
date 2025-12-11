@@ -45,14 +45,13 @@ sections:
             name: Nordpoolpris nu (öre/kWh)
           - entity: sensor.nordpool_prislage
             name: Nordpool prisläge
-          - entity: sensor.nordpool_minpris_kommande_24h_v3
-            name: Minpris kommande 24h (SEK/kWh)
           - entity: sensor.spotpris_diff_kommande_24h_v3
             name: Diff mot minpris 24h (SEK/kWh)
           - entity: sensor.nordpool_arbitrage_spread_24h_v3
             name: Arbitrage spread 24h (SEK/kWh)
           - entity: binary_sensor.battery_price_arbitrage_ok
             name: Arbitrage OK
+          - entity: input_number.battery_price_spread_threshold
       - type: entities
         title: Prisparametrar
         entities:
