@@ -1,0 +1,128 @@
+#Enkel vy för att visa en kontrollpanel över prispläge/peakshaving
+type: sections
+max_columns: 3
+sections:
+  - type: grid
+    cards:
+      - type: entities
+        title: Effektdata (live)
+        entities:
+          - entity: sensor.solinteg_inverter_meter_active_power
+            name: Import / Export (netto)
+          - entity: sensor.medeleffekt_innevarande_timme
+            name: Timmedel nu (W)
+          - entity: sensor.allowed_import_power_this_moment
+            name: Tillåten import just nu (W)
+          - entity: sensor.safe_extra_import_power
+            name: Säker extra import (W)
+          - entity: input_number.max_hourly_import
+            name: Max timmedel import (W)
+      - type: entities
+        title: Batteri
+        entities:
+          - entity: sensor.solinteg_inverter_battery_soc
+            name: SoC (%)
+          - entity: sensor.batteri_styrlage
+            name: Batteri styrläge
+          - entity: number.solinteg_inverter_battery_discharge_current_limit
+            name: Urladdningsström setpoint (A)
+          - entity: number.solinteg_inverter_battery_charge_current_limit
+            name: Laddningsström setpoint (A)
+          - entity: input_number.max_discharge_current
+            name: Max urladdningsström (A)
+          - entity: input_number.battery_soc_min_peakshave
+            name: Min SoC peakshave (%)
+          - entity: number.solinteg_inverter_battery_soc_min_on_grid
+            name: Min SoC prislogik (%)
+          - entity: input_number.battery_soc_max_charge
+            name: Max SoC prisladdning (%)
+  - type: grid
+    cards:
+      - type: entities
+        title: Prisläge & arbitrage
+        entities:
+          - entity: sensor.nordpool_kwh_se1_sek_2_10_025
+            name: Nordpoolpris nu (öre/kWh)
+          - entity: sensor.nordpool_prislage
+            name: Nordpool prisläge
+          - entity: sensor.nordpool_minpris_kommande_24h_v3
+            name: Minpris kommande 24h (SEK/kWh)
+          - entity: sensor.spotpris_diff_kommande_24h_v3
+            name: Diff mot minpris 24h (SEK/kWh)
+          - entity: sensor.nordpool_arbitrage_spread_24h_v3
+            name: Arbitrage spread 24h (SEK/kWh)
+          - entity: binary_sensor.battery_price_arbitrage_ok
+            name: Arbitrage OK
+      - type: entities
+        title: Prisparametrar
+        entities:
+          - entity: input_number.nordpool_cheap_margin_percent
+            name: Cheap-margin (%)
+          - entity: input_number.nordpool_supercheap_offset_ore
+            name: Super cheap offset (öre)
+          - entity: input_number.nordpool_expensive_margin_percent
+            name: Expensive-margin (%)
+          - entity: input_number.nordpool_ultraexpensive_offset_ore
+            name: Ultra expensive offset (öre)
+          - entity: input_number.battery_price_spread_threshold
+            name: Arbitrage spread-tröskel (SEK/kWh)
+          - entity: input_number.export_allow_watt
+            name: Exportmål vid pris-urladdning (W)
+  - type: grid
+    cards:
+      - type: entities
+        title: Reglerparametrar (PI + ramp)
+        entities:
+          - entity: input_number.pid_kp
+            name: Kp (proportionell)
+          - entity: input_number.pid_ki
+            name: Ki (integral)
+          - entity: input_number.pid_kff
+            name: Kff (feedforward)
+          - entity: input_number.pid_ramp_step
+            name: Rampsteg per 10s (A)
+          - entity: input_number.battery_w_per_amp
+            name: Batteri W per A
+          - entity: input_number.pi_integral_term
+            name: PI integralterm (W)
+      - type: entities
+        title: Batteri – kapacitet & gränser
+        entities:
+          - entity: input_number.battery_capacity_kwh
+            name: Batterikapacitet (kWh)
+          - entity: input_number.battery_charge_current_cheap
+            name: Laddström CHEAP (A)
+          - entity: input_number.battery_charge_current_supercheap
+            name: Laddström SUPER CHEAP (A)
+          - entity: input_number.battery_discharge_current_expensive
+            name: Urladdström EXPENSIVE (A)
+          - entity: input_number.battery_discharge_current_ultraexpensive
+            name: Urladdström ULTRA EXPENSIVE (A)
+  - type: grid
+    cards:
+      - type: statistics-graph
+        title: Import vs allowed import
+        days_to_show: 1
+        chart_type: line
+        entities:
+          - entity: sensor.solinteg_inverter_meter_active_power
+            name: Nätimport (W, netto)
+          - entity: sensor.allowed_import_power_this_moment
+            name: Tillåten import (W)
+      - type: statistics-graph
+        title: PID – Error (W)
+        days_to_show: 1
+        chart_type: line
+        entities:
+          - entity: sensor.import_error_w
+            name: Error (W)
+      - type: statistics-graph
+        title: Batteri – SoC & styrläge (state)
+        days_to_show: 1
+        chart_type: line
+        entities:
+          - entity: sensor.solinteg_inverter_battery_soc
+            name: SoC (%)
+          - entity: sensor.batteri_styrlage
+            name: Styrläge (state)
+cards: []
