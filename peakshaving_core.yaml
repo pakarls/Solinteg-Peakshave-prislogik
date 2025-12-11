@@ -235,16 +235,7 @@ template:
         unit_of_measurement: "W"
         device_class: power
         state_class: measurement
-        state: >
-          {% set e_kwh = states('sensor.energy_current_hour') | float(0) %}
-          {% set minute = now().minute | int %}
-          {% set second = now().second | int %}
-          {% set t_elapsed = minute * 60 + second %}
-          {% if t_elapsed <= 0 %}
-            0
-          {% else %}
-            {{ (e_kwh * 1000 * 3600 / t_elapsed) | round(1) }}
-          {% endif %}
+        state: "{{ (states('sensor.energy_current_hour') | float(0)) * 1000 }}"
 
       ###################################################################
       # ALLOWED IMPORT – dynamisk maximport (peakshave-mål)
