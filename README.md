@@ -61,10 +61,20 @@ Projektet är byggt för Home Assistant med:
   - `number.solinteg_inverter_battery_soc_min_on_grid`
   - `select.solinteg_inverter_working_mode`
 
-- **Nordpool-sensor**  
+- **Nordpool-sensor**
+  OBS! Viktigt att köra med HACS version av Nordpool integrationen. Annars kommer inte prislogiken att fungera
   Standardnamn i detta repo:
   - `sensor.nordpool_kwh_se1_sek_2_10_025`  
   Kör du annan region/valuta behöver du justera entity-id i templaten.
+
+
+Ladda hem följande
+- **HACS**
+  Home assistant Community store
+- **ApexCharts**
+  För att visa grafen men olika prislägen
+- **Mushroom**
+  Snyggare kort till dashboard
 
 ---
 Ansvarsfriskrivning
