@@ -6,6 +6,7 @@ Detta projekt innehåller logik för:
 - Prisbaserad laddning/urladdning mot Nordpool  
 - PI-regulator med feedforward för batteriurladdning  
 - Styrning av Solinteg-växelriktare via Home Assistant  
+<img width="1059" height="1020" alt="image" src="https://github.com/user-attachments/assets/d72731b3-9951-41c7-8635-3a695adc7222" />
 
 ---
 
